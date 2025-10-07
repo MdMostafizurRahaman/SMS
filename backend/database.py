@@ -1,6 +1,9 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import os
+import ssl
+
+load_dotenv()
 
 load_dotenv()
 
@@ -18,13 +21,23 @@ async def init_database():
         return users_collection
     try:
         print(f"Connecting to MongoDB: {MONGODB_URL}")
-        # Increase timeout and add retry logic
+        # Create SSL context for MongoDB Atlas
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        # Increase timeout and add retry logic with SSL configuration
         client = AsyncIOMotorClient(
             MONGODB_URL,
             serverSelectionTimeoutMS=30000,  # 30 seconds
             connectTimeoutMS=30000,
             socketTimeoutMS=30000,
-            maxIdleTimeMS=30000
+            maxIdleTimeMS=30000,
+            tls=True,
+            tlsCAFile=None,
+            tlsCertificateKeyFile=None,
+            tlsCRLFile=None,
+            ssl=ssl_context
         )
         database = client[DATABASE_NAME]
         users_collection = database["users"]
