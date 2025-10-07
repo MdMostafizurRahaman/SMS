@@ -30,7 +30,7 @@ services:
       - key: SMS_DRY_RUN
         value: false
       - key: CORS_ORIGINS
-        value: https://royalsms.vercel.app,https://royal-7zpdraygx-mdmostafizurrahaman1s-projects.vercel.app
+        value: https://royalsms.vercel.app,https://royalsms-git-main-mdmostafizurrahaman1s-projects.vercel.app,https://royal-272j67xmq-mdmostafizurrahaman1s-projects.vercel.app
 
   - type: web
     name: sms-frontend
