@@ -84,17 +84,14 @@ async def send_sms(request: dict):
     sent_count = 0
     failed_count = 0
 
-    # 24SMS BD API configuration
+    # ADN SMS API configuration
     api_key = os.getenv("SMS_API_KEY")
-    api_url = os.getenv("SMS_API_URL", "https://24smsbd.com/api/bulkSms")
+    api_url = os.getenv("SMS_API_URL", "https://api.adnsms.com/smsapi")
     sender_id = os.getenv("SMS_SENDER_ID", "BIGBANG")
     sms_dry_run = os.getenv("SMS_DRY_RUN", "false").lower() in ("1", "true", "yes")
 
     if not api_key:
         return {"message": "SMS API key not configured"}
-
-    if not sender_id:
-        return {"message": "SMS Sender ID not configured"}
 
     print(f"send-sms called with {len(data)} items")
     if selected_indices:
@@ -108,9 +105,7 @@ async def send_sms(request: dict):
 
     print(f"Processing {len(filtered_data)} items for SMS")
 
-    # Prepare messages for bulk SMS API
-    messages = []
-
+    # ADN SMS API - send individual SMS for each phone
     for item in filtered_data:
         sms_text = item.get('Result')
         if not sms_text:
@@ -119,11 +114,10 @@ async def send_sms(request: dict):
         # Get both student and guardian phone numbers
         phones_to_send = []
 
-        # Check for guardian phone
+        # Look for guardian phone in various column names
         guardian_phone = None
         student_phone = None
 
-        # Look for guardian phone in various column names
         phone_keys = ['Guardian Phone No', 'Guardian  Phone No', 'Guardian Phone', 'GuardianPhone']
         for key in phone_keys:
             if key in item and item.get(key) not in (None, '', 'nan'):
@@ -154,7 +148,7 @@ async def send_sms(request: dict):
             # Remove any non-digit characters
             phone = ''.join(ch for ch in phone if ch.isdigit())
 
-            # Normalize phone number format
+            # Normalize phone number format for Bangladesh
             if phone.startswith('880'):
                 norm_phone = phone
             elif phone.startswith('0'):
@@ -168,71 +162,61 @@ async def send_sms(request: dict):
 
             print(f"Normalized phone: {norm_phone}")
 
-            # Add to messages array
-            messages.append({
-                "to": norm_phone,
-                "message": str(sms_text)
-            })
+            try:
+                # ADN SMS API format
+                payload = {
+                    'api_key': api_key,
+                    'senderid': sender_id,
+                    'number': norm_phone,
+                    'message': str(sms_text)
+                }
 
-    if not messages:
-        return {"message": "No valid phone numbers found to send SMS"}
+                if sms_dry_run:
+                    print("DRY RUN enabled - would POST to", api_url, "with:")
+                    print(payload)
+                    sent_count += 1
+                else:
+                    response = requests.post(api_url, data=payload, timeout=30)
+                    print(f"SMS API response status: {response.status_code}")
+                    print(f"Response body: {response.text}")
 
-    print(f"Sending {len(messages)} SMS messages")
-
-    try:
-        # 24SMS BD API format
-        payload = {
-            "api_key": api_key,
-            "sender_id": sender_id,
-            "messages": messages
-        }
-
-        if sms_dry_run:
-            print("DRY RUN enabled - would POST to", api_url, "with:")
-            print(payload)
-            sent_count = len(messages)
-        else:
-            response = requests.post(api_url, json=payload, timeout=30)
-            print(f"SMS API response status: {response.status_code}")
-            print(f"Response body: {response.text}")
-
-            if response.status_code == 200:
-                try:
-                    result = response.json()
-                    # Handle 24SMS BD response format
-                    if isinstance(result, dict):
-                        if result.get('status') == 'success' or result.get('success') == True:
-                            sent_count = len(messages)
-                            print(f"Successfully sent {sent_count} SMS messages")
-                        elif 'error' in result:
-                            print(f"API Error: {result['error']}")
-                            failed_count = len(messages)
-                        else:
-                            print(f"Unexpected response: {result}")
-                            failed_count = len(messages)
-                    elif isinstance(result, list):
-                        # Handle array response
-                        successful = sum(1 for msg in result if msg.get('status') == 'success' or msg.get('success') == True)
-                        sent_count = successful
-                        failed_count = len(messages) - successful
+                    if response.status_code == 200:
+                        try:
+                            result = response.json()
+                            # Check ADN SMS response format
+                            if isinstance(result, dict):
+                                if result.get('status') == 'success' or result.get('success') == True or result.get('error') == 0:
+                                    sent_count += 1
+                                    print(f"SMS sent successfully to {norm_phone}")
+                                else:
+                                    failed_count += 1
+                                    print(f"Failed to send SMS to {norm_phone}: {result}")
+                            else:
+                                # Check if response text contains success indicators
+                                response_text = response.text.lower()
+                                if 'success' in response_text or 'sent' in response_text or 'ok' in response_text:
+                                    sent_count += 1
+                                    print(f"SMS sent successfully to {norm_phone}")
+                                else:
+                                    failed_count += 1
+                                    print(f"Failed to send SMS to {norm_phone}: {response.text}")
+                        except Exception as e:
+                            print(f"Error parsing response: {e}")
+                            # If we can't parse JSON, check response text
+                            response_text = response.text.lower()
+                            if 'success' in response_text or 'sent' in response_text:
+                                sent_count += 1
+                                print(f"SMS sent successfully to {norm_phone}")
+                            else:
+                                failed_count += 1
+                                print(f"Failed to send SMS to {norm_phone}: {response.text}")
                     else:
-                        sent_count = len(messages)  # Assume success if we get a response
-                        print("Response received, assuming success")
-                except Exception as e:
-                    print(f"Error parsing response: {e}")
-                    # If we can't parse JSON, check if response contains success indicators
-                    response_text = response.text.lower()
-                    if 'success' in response_text or 'sent' in response_text:
-                        sent_count = len(messages)
-                    else:
-                        failed_count = len(messages)
-            else:
-                print(f"API request failed with status {response.status_code}: {response.text}")
-                failed_count = len(messages)
+                        failed_count += 1
+                        print(f"API request failed with status {response.status_code}: {response.text}")
 
-    except Exception as e:
-        print(f"Error sending SMS: {e}")
-        failed_count = len(messages)
+            except Exception as e:
+                print(f"Error sending SMS to {norm_phone}: {e}")
+                failed_count += 1
 
     return {"message": f"SMS sent to {sent_count} numbers. Failed: {failed_count}"}
 
@@ -243,11 +227,11 @@ async def get_balance():
         raise HTTPException(status_code=500, detail="SMS API key not configured")
 
     try:
-        # Try 24SMS BD balance API
-        response = requests.get(f"https://24smsbd.com/api/balance?api_key={api_key}")
+        # ADN SMS balance API
+        response = requests.get(f"https://api.adnsms.com/balance?api_key={api_key}")
         result = response.json()
 
-        # Handle different response formats
+        # Handle ADN SMS response formats
         if response.status_code == 200:
             if isinstance(result, dict):
                 balance = result.get('balance', result.get('credit', result.get('sms_balance', 'Unknown')))

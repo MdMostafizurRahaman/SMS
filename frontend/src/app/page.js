@@ -5,7 +5,6 @@ import { useState } from 'react';
 export default function Home() {
   const [file, setFile] = useState(null);
   const [data, setData] = useState([]);
-  const [selectedIndices, setSelectedIndices] = useState([]);
   const [message, setMessage] = useState([]);
   const [loading, setLoading] = useState(false);
   const [balance, setBalance] = useState(null);
@@ -26,8 +25,6 @@ export default function Home() {
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
-    // Reset selections when new file is uploaded
-    setSelectedIndices([]);
   };
 
   const handleUpload = async () => {
@@ -44,8 +41,6 @@ export default function Home() {
       const result = await response.json();
       if (response.ok) {
         setData(result.data);
-        // Auto-select all rows by default
-        setSelectedIndices(result.data.map((_, index) => index));
         setMessage('');
       } else {
         setMessage(result.detail);
@@ -56,30 +51,7 @@ export default function Home() {
     setLoading(false);
   };
 
-  const handleRowSelect = (index) => {
-    setSelectedIndices(prev => {
-      if (prev.includes(index)) {
-        return prev.filter(i => i !== index);
-      } else {
-        return [...prev, index];
-      }
-    });
-  };
-
-  const handleSelectAll = () => {
-    if (selectedIndices.length === data.length) {
-      setSelectedIndices([]);
-    } else {
-      setSelectedIndices(data.map((_, index) => index));
-    }
-  };
-
   const handleSendSMS = async () => {
-    if (selectedIndices.length === 0) {
-      setMessage('Please select at least one row to send SMS');
-      return;
-    }
-
     setLoading(true);
     try {
       const response = await fetch('http://localhost:8000/send-sms', {
@@ -87,10 +59,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          data: data,
-          selectedIndices: selectedIndices
-        }),
+        body: JSON.stringify(data),
       });
       const result = await response.json();
       setMessage(result.message);
@@ -98,20 +67,6 @@ export default function Home() {
       setMessage('Error sending SMS');
     }
     setLoading(false);
-  };
-
-  const getPhoneDisplay = (row) => {
-    const studentPhone = row['Student Phone No'];
-    const guardianPhone = row['Guardian Phone No'];
-
-    if (studentPhone && guardianPhone) {
-      return `${studentPhone} / ${guardianPhone}`;
-    } else if (studentPhone) {
-      return studentPhone;
-    } else if (guardianPhone) {
-      return guardianPhone;
-    }
-    return '';
   };
 
   return (
@@ -136,7 +91,7 @@ export default function Home() {
         </header>
 
         <div className="row justify-content-center">
-          <div className="col-md-10">
+          <div className="col-md-8">
             <div className="card shadow p-4">
               <h4 className="card-title text-center mb-4">Upload Excel File</h4>
               <div className="mb-3">
@@ -176,50 +131,22 @@ export default function Home() {
 
             {data.length > 0 && (
               <div className="card shadow p-4 mt-4">
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h4 className="card-title mb-0">Extracted Data ({data.length} rows)</h4>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="selectAll"
-                      checked={selectedIndices.length === data.length && data.length > 0}
-                      onChange={handleSelectAll}
-                    />
-                    <label className="form-check-label" htmlFor="selectAll">
-                      Select All ({selectedIndices.length} selected)
-                    </label>
-                  </div>
-                </div>
+                <h4 className="card-title mb-3">Extracted Data</h4>
                 <div className="table-responsive">
                   <table className="table table-hover align-middle">
                     <thead className="table-dark">
                       <tr>
-                        <th style={{width: '50px'}}>Select</th>
-                        <th>Phone Numbers</th>
+                        <th>Student Phone No</th>
+                        <th>Guardian Phone No</th>
                         <th>Result</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.map((row, index) => (
-                        <tr key={index} className={selectedIndices.includes(index) ? 'table-active' : ''}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedIndices.includes(index)}
-                              onChange={() => handleRowSelect(index)}
-                            />
-                          </td>
-                          <td>
-                            <div>
-                              <small className="text-muted">Student: {row['Student Phone No'] || 'N/A'}</small><br/>
-                              <small className="text-muted">Guardian: {row['Guardian Phone No'] || 'N/A'}</small>
-                            </div>
-                          </td>
-                          <td style={{maxWidth: '400px'}}>
-                            <small>{row['Result']}</small>
-                          </td>
+                        <tr key={index}>
+                          <td>{row['Student Phone No'] || ''}</td>
+                          <td>{row['Guardian Phone No'] || ''}</td>
+                          <td>{row['Result']}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -228,10 +155,10 @@ export default function Home() {
                 <div className="text-center mt-4">
                   <button
                     onClick={handleSendSMS}
-                    disabled={loading || selectedIndices.length === 0}
+                    disabled={loading}
                     className="btn btn-success btn-lg"
                   >
-                    {loading ? 'Sending...' : `Send SMS to ${selectedIndices.length} Selected Recipients`}
+                    {loading ? 'Sending...' : 'Confirm & Send SMS'}
                   </button>
                 </div>
               </div>
