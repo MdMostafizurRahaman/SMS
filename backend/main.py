@@ -84,10 +84,10 @@ async def send_sms(request: dict):
     sent_count = 0
     failed_count = 0
 
-    # ADN SMS API configuration
+    # BulkSMS BD API configuration
     api_key = os.getenv("SMS_API_KEY")
-    api_url = os.getenv("SMS_API_URL", "https://api.adnsms.com/smsapi")
-    sender_id = os.getenv("SMS_SENDER_ID", "BIGBANG")
+    api_url = os.getenv("SMS_API_URL", "http://bulksmsbd.net/api/smsapi")
+    sender_id = os.getenv("SMS_SENDER_ID", "8809617624071")
     sms_dry_run = os.getenv("SMS_DRY_RUN", "false").lower() in ("1", "true", "yes")
 
     if not api_key:
@@ -105,7 +105,7 @@ async def send_sms(request: dict):
 
     print(f"Processing {len(filtered_data)} items for SMS")
 
-    # ADN SMS API - send individual SMS for each phone
+    # Send individual SMS to each phone number
     for item in filtered_data:
         sms_text = item.get('Result')
         if not sms_text:
@@ -139,7 +139,7 @@ async def send_sms(request: dict):
         if student_phone and student_phone.lower() not in ('nan', 'none', ''):
             phones_to_send.append(student_phone)
 
-        # Process each phone number
+        # Send individual SMS to each phone number
         for phone in phones_to_send:
             print(f"Processing phone: {phone}")
 
@@ -163,7 +163,7 @@ async def send_sms(request: dict):
             print(f"Normalized phone: {norm_phone}")
 
             try:
-                # ADN SMS API format
+                # BulkSMS BD API format - individual SMS to each phone
                 payload = {
                     'api_key': api_key,
                     'senderid': sender_id,
@@ -182,29 +182,45 @@ async def send_sms(request: dict):
 
                     if response.status_code == 200:
                         try:
-                            result = response.json()
-                            # Check ADN SMS response format
-                            if isinstance(result, dict):
-                                if result.get('status') == 'success' or result.get('success') == True or result.get('error') == 0:
+                            result = response.text.strip()
+                            
+                            # Check if it's JSON response
+                            if result.startswith('{'):
+                                import json
+                                json_result = json.loads(result)
+                                
+                                # Check for IP whitelisting error
+                                if json_result.get('response_code') == 1032 or 'not Whitelisted' in str(json_result.get('error_message', '')):
+                                    failed_count += 1
+                                    print(f"IP Whitelisting error for {norm_phone}: {json_result.get('error_message')}")
+                                    continue
+                                
+                                # Check for success
+                                if json_result.get('response_code') == 1001 or 'success' in str(json_result.get('success_message', '')).lower():
+                                    sent_count += 1
+                                    print(f"SMS sent successfully to {norm_phone}")
+                                else:
+                                    failed_count += 1
+                                    print(f"Failed to send SMS to {norm_phone}: {json_result}")
+                            else:
+                                # Check BulkSMS BD text response format
+                                if result and 'success' in result.lower():
+                                    sent_count += 1
+                                    print(f"SMS sent successfully to {norm_phone}")
+                                elif result and any(code in result for code in ['1001', '200', '201']):
                                     sent_count += 1
                                     print(f"SMS sent successfully to {norm_phone}")
                                 else:
                                     failed_count += 1
                                     print(f"Failed to send SMS to {norm_phone}: {result}")
-                            else:
-                                # Check if response text contains success indicators
-                                response_text = response.text.lower()
-                                if 'success' in response_text or 'sent' in response_text or 'ok' in response_text:
-                                    sent_count += 1
-                                    print(f"SMS sent successfully to {norm_phone}")
-                                else:
-                                    failed_count += 1
-                                    print(f"Failed to send SMS to {norm_phone}: {response.text}")
                         except Exception as e:
                             print(f"Error parsing response: {e}")
-                            # If we can't parse JSON, check response text
+                            # If we can't parse, check for common success indicators
                             response_text = response.text.lower()
-                            if 'success' in response_text or 'sent' in response_text:
+                            if 'not whitelisted' in response_text:
+                                failed_count += 1
+                                print(f"IP Whitelisting error for {norm_phone}")
+                            elif any(indicator in response_text for indicator in ['success', 'sent', 'ok', '1001']):
                                 sent_count += 1
                                 print(f"SMS sent successfully to {norm_phone}")
                             else:
@@ -227,15 +243,16 @@ async def get_balance():
         raise HTTPException(status_code=500, detail="SMS API key not configured")
 
     try:
-        # ADN SMS balance API
-        response = requests.get(f"https://api.adnsms.com/balance?api_key={api_key}")
-        result = response.json()
+        # BulkSMS BD balance API (using similar format as SMS API)
+        response = requests.get(f"http://bulksmsbd.net/api/smsapi?api_key={api_key}&type=balance")
+        result = response.text.strip()
 
-        # Handle ADN SMS response formats
+        # Handle BulkSMS BD response formats
         if response.status_code == 200:
-            if isinstance(result, dict):
-                balance = result.get('balance', result.get('credit', result.get('sms_balance', 'Unknown')))
-                return {"balance": str(balance)}
+            if result and any(char.isdigit() for char in result):
+                # Extract numeric balance
+                balance = ''.join(c for c in result if c.isdigit())
+                return {"balance": balance if balance else "Available"}
             else:
                 return {"balance": "Available"}
         else:
