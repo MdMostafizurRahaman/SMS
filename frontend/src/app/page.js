@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Image from 'next/image';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function Home() {
   const [file, setFile] = useState(null);
   const [data, setData] = useState([]);
@@ -13,7 +15,7 @@ export default function Home() {
 
   const checkBalance = async () => {
     try {
-      const response = await fetch('http://localhost:8000/balance');
+      const response = await fetch(`${API_BASE_URL}/balance`);
       const result = await response.json();
       if (response.ok) {
         setBalance(result.balance);
@@ -38,7 +40,7 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -83,7 +85,7 @@ export default function Home() {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/send-sms', {
+      const response = await fetch(`${API_BASE_URL}/send-sms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
