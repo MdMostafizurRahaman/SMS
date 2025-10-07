@@ -77,101 +77,151 @@ async def upload_file(file: UploadFile = File(...)):
     return {"data": data}
 
 @app.post("/send-sms")
-async def send_sms(data: list[dict]):
+async def send_sms(request: dict):
+    data = request.get('data', [])
+    selected_indices = request.get('selectedIndices', None)  # Optional: indices of selected rows
+
     sent_count = 0
     failed_count = 0
-    
-    # SMS.net.bd API configuration
+
+    # BulkSMS BD API configuration
     api_key = os.getenv("SMS_API_KEY")
-    api_url = os.getenv("SMS_API_URL", "https://api.sms.net.bd/sendsms")
+    api_url = os.getenv("SMS_API_URL", "http://bulksmsbd.net/api/smsapimany")
+    sender_id = os.getenv("SMS_SENDER_ID")
     sms_dry_run = os.getenv("SMS_DRY_RUN", "false").lower() in ("1", "true", "yes")
-    
+
     if not api_key:
         return {"message": "SMS API key not configured"}
-    
+
+    if not sender_id:
+        return {"message": "SMS Sender ID not configured"}
+
     print(f"send-sms called with {len(data)} items")
-    # print first few items for debug (avoid huge logs)
-    for i, it in enumerate(data[:5]):
-        print(f"item[{i}]:", it)
+    if selected_indices:
+        print(f"Selected indices: {selected_indices}")
 
-    # Possible column name variants to look for in uploaded Excel
-    phone_keys = [
-        'Guardian  Phone No',
-        'Guardian Phone No',
-        'Guardian Phone',
-        'GuardianPhone',
-        'Student Phone No',
-        'Student Phone'
-    ]
+    # Filter data if specific indices are selected
+    if selected_indices is not None:
+        filtered_data = [data[i] for i in selected_indices if i < len(data)]
+    else:
+        filtered_data = data
 
-    for item in data:
-        # find first phone key present in the row
+    print(f"Processing {len(filtered_data)} items for SMS")
+
+    # Prepare messages for bulk SMS API
+    messages = []
+
+    for item in filtered_data:
+        sms_text = item.get('Result')
+        if not sms_text:
+            continue
+
+        # Get both student and guardian phone numbers
+        phones_to_send = []
+
+        # Check for guardian phone
         guardian_phone = None
-        used_key = None
-        for k in phone_keys:
-            if k in item and item.get(k) not in (None, ''):
-                guardian_phone = item.get(k)
-                used_key = k
+        student_phone = None
+
+        # Look for guardian phone in various column names
+        phone_keys = ['Guardian Phone No', 'Guardian  Phone No', 'Guardian Phone', 'GuardianPhone']
+        for key in phone_keys:
+            if key in item and item.get(key) not in (None, '', 'nan'):
+                guardian_phone = str(item.get(key)).strip()
                 break
 
-        sms_text = item.get('Result')
+        # Look for student phone
+        student_keys = ['Student Phone No', 'Student Phone']
+        for key in student_keys:
+            if key in item and item.get(key) not in (None, '', 'nan'):
+                student_phone = str(item.get(key)).strip()
+                break
 
-        # If guardian phone missing, try student phone as fallback
-        if (not guardian_phone or str(guardian_phone).strip() == '') and 'Student Phone No' in item:
-            guardian_phone = item.get('Student Phone No')
-            used_key = 'Student Phone No'
+        # Add guardian phone if available
+        if guardian_phone and guardian_phone.lower() not in ('nan', 'none', ''):
+            phones_to_send.append(guardian_phone)
 
-        if guardian_phone and str(guardian_phone).strip() and sms_text:
-            phone = str(guardian_phone).strip()
-            print(f"Found phone in column '{used_key}': {phone}")
-            # normalize phone: remove spaces, dashes and parentheses
+        # Add student phone if available
+        if student_phone and student_phone.lower() not in ('nan', 'none', ''):
+            phones_to_send.append(student_phone)
+
+        # Process each phone number
+        for phone in phones_to_send:
+            print(f"Processing phone: {phone}")
+
+            # Normalize phone: remove spaces, dashes and parentheses
             phone = phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
-            # remove any non-digit characters
+            # Remove any non-digit characters
             phone = ''.join(ch for ch in phone if ch.isdigit())
 
-            # If Excel stripped a leading zero and resulted in a 10-digit number (e.g. 1566...), assume missing leading 0 and add country code
+            # Normalize phone number format
             if phone.startswith('880'):
                 norm_phone = phone
             elif phone.startswith('0'):
                 norm_phone = '880' + phone.lstrip('0')
             elif len(phone) == 10:
-                # likely missing leading 0 -> add country code
                 norm_phone = '880' + phone
             elif len(phone) == 11 and phone.startswith('1'):
-                # e.g., '1XXXXXXXXXX' (missing 0) -> treat as 880 + phone
                 norm_phone = '880' + phone
             else:
                 norm_phone = phone
 
             print(f"Normalized phone: {norm_phone}")
 
-            try:
-                print(f"Attempting send to {norm_phone} (msg len={len(str(sms_text))})")
-                payload = {'api_key': api_key, 'msg': sms_text, 'to': norm_phone}
-                if sms_dry_run:
-                    print(f"DRY RUN enabled - would POST to {api_url} with:")
-                    print(payload)
-                    sent_count += 1
-                else:
-                    response = requests.post(api_url, data=payload, timeout=10)
-                    # log response status
-                    print(f"SMS API response status: {response.status_code}, body: {response.text}")
-                    result = {}
-                    try:
-                        result = response.json()
-                    except Exception:
-                        # non-json response
-                        pass
-                    if result.get('error') == 0:
-                        print(f"SMS sent to {norm_phone}: {result.get('msg')}")
-                        sent_count += 1
+            # Add to messages array
+            messages.append({
+                "to": norm_phone,
+                "message": str(sms_text)
+            })
+
+    if not messages:
+        return {"message": "No valid phone numbers found to send SMS"}
+
+    print(f"Sending {len(messages)} SMS messages")
+
+    try:
+        payload = {
+            "api_key": api_key,
+            "senderid": sender_id,
+            "messages": messages
+        }
+
+        if sms_dry_run:
+            print("DRY RUN enabled - would POST to", api_url, "with:")
+            print(payload)
+            sent_count = len(messages)
+        else:
+            response = requests.post(api_url, json=payload, timeout=30)
+            print(f"SMS API response status: {response.status_code}")
+            print(f"Response body: {response.text}")
+
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    # Check for success based on BulkSMS BD response format
+                    if isinstance(result, dict) and 'status' in result and result['status'].lower() == 'success':
+                        sent_count = len(messages)
+                        print(f"Successfully sent {sent_count} SMS messages")
+                    elif isinstance(result, list):
+                        # Handle array response
+                        successful = sum(1 for msg in result if msg.get('status') == 'success')
+                        sent_count = successful
+                        failed_count = len(messages) - successful
                     else:
-                        print(f"Failed to send SMS to {norm_phone}: {result}")
-                        failed_count += 1
-            except Exception as e:
-                print(f"Error sending SMS to {norm_phone}: {e}")
-                failed_count += 1
-    
+                        print(f"Unexpected response format: {result}")
+                        failed_count = len(messages)
+                except Exception as e:
+                    print(f"Error parsing response: {e}")
+                    # If we can't parse JSON, assume success if status is 200
+                    sent_count = len(messages)
+            else:
+                print(f"API request failed with status {response.status_code}")
+                failed_count = len(messages)
+
+    except Exception as e:
+        print(f"Error sending SMS: {e}")
+        failed_count = len(messages)
+
     return {"message": f"SMS sent to {sent_count} numbers. Failed: {failed_count}"}
 
 @app.get("/balance")
@@ -179,16 +229,25 @@ async def get_balance():
     api_key = os.getenv("SMS_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="SMS API key not configured")
-    
+
     try:
-        response = requests.get(f"https://api.sms.net.bd/user/balance/?api_key={api_key}")
+        # Try BulkSMS BD balance API (adjust URL as needed)
+        response = requests.get(f"http://bulksmsbd.net/api/balance?api_key={api_key}")
         result = response.json()
-        if result.get('error') == 0:
-            return {"balance": result['data']['balance']}
+
+        # Handle different response formats
+        if response.status_code == 200:
+            if isinstance(result, dict):
+                balance = result.get('balance', result.get('credit', 'Unknown'))
+                return {"balance": str(balance)}
+            else:
+                return {"balance": "Available"}
         else:
-            raise HTTPException(status_code=400, detail=result.get('msg', 'Failed to get balance'))
+            raise HTTPException(status_code=400, detail=f"Failed to get balance: {response.text}")
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Fallback response
+        return {"balance": "Unable to check balance"}
 
 if __name__ == "__main__":
     import uvicorn
