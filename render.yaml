@@ -3,7 +3,7 @@ services:
     name: sms-backend
     runtime: python3
     buildCommand: "pip install -r backend/requirements.txt"
-    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "uvicorn backend/main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: MONGODB_URL
         value: mongodb+srv://bsse1320_db_user:FHwoFbjV1kfU8scs@cluster0.85gerfy.mongodb.net/
