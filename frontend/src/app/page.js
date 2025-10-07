@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import axios from 'axios';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -11,6 +13,37 @@ export default function Home() {
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [message, setMessage] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [smsResult, setSmsResult] = useState(null); // Store SMS sending result
+  const router = useRouter();
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      // Don't redirect immediately, show login options instead
+      setCurrentUser(null);
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API_BASE_URL}/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCurrentUser(response.data);
+    } catch (err) {
+      localStorage.removeItem('token');
+      setCurrentUser(null);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    router.push('/login');
+  };
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -24,9 +57,14 @@ export default function Home() {
     const formData = new FormData();
     formData.append('file', file);
 
+    const token = localStorage.getItem('token');
+
     try {
       const response = await fetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         body: formData,
       });
       const result = await response.json();
@@ -69,11 +107,13 @@ export default function Home() {
     }
 
     setLoading(true);
+    const token = localStorage.getItem('token');
     try {
       const response = await fetch(`${API_BASE_URL}/send-sms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           data: data,
@@ -82,8 +122,122 @@ export default function Home() {
       });
       const result = await response.json();
       setMessage(result.message);
+      setSmsResult(result); // Store the full result including failed_recipients
     } catch (error) {
       setMessage('Error sending SMS');
+      setSmsResult(null);
+    }
+    setLoading(false);
+  };
+
+  const handleExportExcel = async () => {
+    if (data.length === 0) {
+      setMessage('No data to export');
+      return;
+    }
+
+    setLoading(true);
+    const token = localStorage.getItem('token');
+    try {
+      const response = await fetch(`${API_BASE_URL}/export-excel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          data: data
+        }),
+      });
+
+      if (response.ok) {
+        // Create blob from response
+        const blob = await response.blob();
+        
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Get filename from response headers or use default
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = 'SMS_Export.xlsx';
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename=(.+)/);
+          if (filenameMatch) {
+            filename = filenameMatch[1].replace(/"/g, '');
+          }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        setMessage('Excel file downloaded successfully!');
+      } else {
+        const result = await response.json();
+        setMessage(result.detail || 'Error exporting Excel file');
+      }
+    } catch (error) {
+      setMessage('Error exporting Excel file');
+    }
+    setLoading(false);
+  };
+
+  const handleDownloadFailed = async () => {
+    if (!smsResult || !smsResult.failed_recipients || smsResult.failed_recipients.length === 0) {
+      setMessage('No failed recipients to download');
+      return;
+    }
+
+    setLoading(true);
+    const token = localStorage.getItem('token');
+    try {
+      const response = await fetch(`${API_BASE_URL}/download-failed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          failed_recipients: smsResult.failed_recipients
+        }),
+      });
+
+      if (response.ok) {
+        // Create blob from response
+        const blob = await response.blob();
+        
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Get filename from response headers or use default
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = 'Failed_Recipients.xlsx';
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename=(.+)/);
+          if (filenameMatch) {
+            filename = filenameMatch[1].replace(/"/g, '');
+          }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        setMessage('Failed recipients Excel downloaded successfully!');
+      } else {
+        const result = await response.json();
+        setMessage(result.detail || 'Error downloading failed recipients Excel');
+      }
+    } catch (error) {
+      setMessage('Error downloading failed recipients Excel');
     }
     setLoading(false);
   };
@@ -106,6 +260,33 @@ export default function Home() {
     <div className="min-h-screen bg-light">
       <div className="container-lg py-4">
         <header className="text-center mb-4">
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <div></div>
+            <div className="d-flex align-items-center">
+              {currentUser ? (
+                <>
+                  <span className="me-3">Welcome, {currentUser?.full_name}</span>
+                  {currentUser?.role === 'admin' && (
+                    <a href="/admin" className="btn btn-outline-primary btn-sm me-2">
+                      Admin Panel
+                    </a>
+                  )}
+                  <button className="btn btn-outline-secondary btn-sm" onClick={logout}>
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <>
+                  <a href="/login" className="btn btn-primary btn-sm me-2">
+                    Login
+                  </a>
+                  <a href="/register" className="btn btn-outline-primary btn-sm">
+                    Register
+                  </a>
+                </>
+              )}
+            </div>
+          </div>
           <div className="d-flex flex-column align-items-center">
             <Image
               src="/Big Bang logo-icn.png"
@@ -124,98 +305,155 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="row justify-content-center">
-          <div className="col-md-10">
-            <div className="card shadow p-4">
-              <h4 className="card-title text-center mb-4">Upload Excel File</h4>
-              <div className="mb-3">
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleFileChange}
-                  className="form-control"
-                />
+        {!currentUser ? (
+          <div className="row justify-content-center">
+            <div className="col-md-8">
+              <div className="card shadow p-4 text-center">
+                <h4 className="card-title mb-3">Welcome to SMS Sender</h4>
+                <p className="text-muted mb-4">
+                  Please login or register to access the SMS sending functionality.
+                  Upload Excel files with student and guardian phone numbers to send SMS messages.
+                </p>
+                <div className="d-flex justify-content-center gap-3">
+                  <a href="/login" className="btn btn-primary btn-lg">
+                    Login
+                  </a>
+                  <a href="/register" className="btn btn-outline-primary btn-lg">
+                    Register
+                  </a>
+                </div>
               </div>
-              <div className="text-center">
-                <button
-                  onClick={handleUpload}
-                  disabled={!file || loading}
-                  className="btn btn-primary btn-lg"
-                >
-                  {loading ? 'Uploading...' : 'Upload and Parse'}
-                </button>
+            </div>
+          </div>
+        ) : (
+          <div className="row justify-content-center">
+            <div className="col-md-10">
+              <div className="card shadow p-4">
+                <h4 className="card-title text-center mb-4">Upload Excel File</h4>
+                <div className="mb-3">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileChange}
+                    className="form-control"
+                  />
+                </div>
+                <div className="text-center">
+                  <button
+                    onClick={handleUpload}
+                    disabled={!file || loading}
+                    className="btn btn-primary btn-lg"
+                  >
+                    {loading ? 'Uploading...' : 'Upload and Parse'}
+                  </button>
+                </div>
+                {message && (
+                  <div className="alert alert-danger mt-3" role="alert">
+                    {message}
+                  </div>
+                )}
               </div>
-              {message && (
-                <div className="alert alert-danger mt-3" role="alert">
-                  {message}
+
+              {data.length > 0 && (
+                <div className="card shadow p-4 mt-4">
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h4 className="card-title mb-0">Extracted Data ({data.length} rows)</h4>
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="selectAll"
+                        checked={selectedIndices.length === data.length && data.length > 0}
+                        onChange={handleSelectAll}
+                      />
+                      <label className="form-check-label" htmlFor="selectAll">
+                        Select All ({selectedIndices.length} selected)
+                      </label>
+                    </div>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle">
+                      <thead className="table-dark">
+                        <tr>
+                          <th style={{width: '50px'}}>Select</th>
+                          <th>Phone Numbers</th>
+                          <th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.map((row, index) => (
+                          <tr key={index} className={selectedIndices.includes(index) ? 'table-active' : ''}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selectedIndices.includes(index)}
+                                onChange={() => handleRowSelect(index)}
+                              />
+                            </td>
+                            <td>
+                              <div>
+                                <small className="text-muted">Student: {row['Student Phone No'] || 'N/A'}</small><br/>
+                                <small className="text-muted">Guardian: {row['Guardian Phone No'] || 'N/A'}</small>
+                              </div>
+                            </td>
+                            <td style={{maxWidth: '400px'}}>
+                              <small>{row['Result']}</small>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-center mt-4">
+                    <div className="d-flex justify-content-center gap-3">
+                      <button
+                        onClick={handleSendSMS}
+                        disabled={loading || selectedIndices.length === 0}
+                        className="btn btn-success btn-lg"
+                      >
+                        {loading ? 'Sending...' : `Send SMS to ${selectedIndices.length} Selected Recipients`}
+                      </button>
+                      <button
+                        onClick={handleExportExcel}
+                        disabled={loading}
+                        className="btn btn-info btn-lg"
+                      >
+                        {loading ? 'Exporting...' : 'Export to Excel'}
+                      </button>
+                    </div>
+                    <div className="mt-2">
+                      <small className="text-muted">
+                        Export will create a ZIP file with two separate Excel files: Success.xlsx and Failed.xlsx
+                      </small>
+                    </div>
+
+                    {smsResult && (
+                      <div className="mt-3">
+                        <div className="alert alert-info">
+                          <h6>SMS Sending Results:</h6>
+                          <p className="mb-2">
+                            <strong>Sent:</strong> {smsResult.sent_count || 0} | 
+                            <strong> Failed:</strong> {smsResult.failed_count || 0}
+                          </p>
+                          {smsResult.failed_count > 0 && (
+                            <button
+                              onClick={handleDownloadFailed}
+                              disabled={loading}
+                              className="btn btn-warning btn-sm"
+                            >
+                              {loading ? 'Downloading...' : 'Download Failed Recipients Excel'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-
-            {data.length > 0 && (
-              <div className="card shadow p-4 mt-4">
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h4 className="card-title mb-0">Extracted Data ({data.length} rows)</h4>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="selectAll"
-                      checked={selectedIndices.length === data.length && data.length > 0}
-                      onChange={handleSelectAll}
-                    />
-                    <label className="form-check-label" htmlFor="selectAll">
-                      Select All ({selectedIndices.length} selected)
-                    </label>
-                  </div>
-                </div>
-                <div className="table-responsive">
-                  <table className="table table-hover align-middle">
-                    <thead className="table-dark">
-                      <tr>
-                        <th style={{width: '50px'}}>Select</th>
-                        <th>Phone Numbers</th>
-                        <th>Result</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.map((row, index) => (
-                        <tr key={index} className={selectedIndices.includes(index) ? 'table-active' : ''}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedIndices.includes(index)}
-                              onChange={() => handleRowSelect(index)}
-                            />
-                          </td>
-                          <td>
-                            <div>
-                              <small className="text-muted">Student: {row['Student Phone No'] || 'N/A'}</small><br/>
-                              <small className="text-muted">Guardian: {row['Guardian Phone No'] || 'N/A'}</small>
-                            </div>
-                          </td>
-                          <td style={{maxWidth: '400px'}}>
-                            <small>{row['Result']}</small>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="text-center mt-4">
-                  <button
-                    onClick={handleSendSMS}
-                    disabled={loading || selectedIndices.length === 0}
-                    className="btn btn-success btn-lg"
-                  >
-                    {loading ? 'Sending...' : `Send SMS to ${selectedIndices.length} Selected Recipients`}
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
