@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import axios from 'axios';
 import Image from 'next/image';
 
@@ -24,11 +25,7 @@ export default function Admin() {
   const [profileLoading, setProfileLoading] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
       router.push('/login');
@@ -58,7 +55,11 @@ export default function Admin() {
       router.push('/login');
     }
     setLoading(false);
-  };
+  }, [router]);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   const fetchPendingUsers = async () => {
     try {
@@ -175,7 +176,7 @@ export default function Admin() {
     <div className="min-h-screen bg-light">
       <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
         <div className="container">
-          <a className="navbar-brand d-flex align-items-center" href="/">
+          <Link className="navbar-brand d-flex align-items-center" href="/">
             <Image
               src="/Big Bang logo-icn.png"
               alt="SMS Sender logo"
@@ -184,7 +185,7 @@ export default function Admin() {
               className="me-2"
             />
             Admin Panel
-          </a>
+          </Link>
           <div className="navbar-nav ms-auto">
             <span className="navbar-text me-3">
               Welcome, {currentUser?.full_name}
