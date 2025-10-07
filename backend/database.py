@@ -19,16 +19,15 @@ async def init_database():
     try:
         print(f"Connecting to MongoDB: {MONGODB_URL}")
 
-        # Increase timeout and add SSL configuration for MongoDB Atlas
+        # Configuration optimized for cloud deployment platforms like Render
         client = AsyncIOMotorClient(
             MONGODB_URL,
-            serverSelectionTimeoutMS=30000,  # 30 seconds
-            connectTimeoutMS=30000,
-            socketTimeoutMS=30000,
-            maxIdleTimeMS=30000,
-            tls=True,
-            tlsAllowInvalidCertificates=True,
-            tlsAllowInvalidHostnames=True
+            serverSelectionTimeoutMS=5000,  # Reduced timeout
+            connectTimeoutMS=10000,
+            socketTimeoutMS=20000,
+            maxIdleTimeMS=45000,
+            retryWrites=True,
+            w='majority'
         )
         database = client[DATABASE_NAME]
         users_collection = database["users"]

@@ -59,6 +59,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30))
 
+@app.get('/healthz')
+async def health_check():
+    """Health check endpoint for Render"""
+    try:
+        # Test database connection
+        users_collection = await get_users_collection()
+        # Simple ping to verify database connectivity
+        await users_collection.count_documents({}, limit=1)
+        return {'status': 'healthy', 'database': 'connected'}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f'Service unavailable: {str(e)}')
+
 @app.post('/register', response_model=dict)
 async def register(user: UserCreate):
     users_collection = await get_users_collection()
