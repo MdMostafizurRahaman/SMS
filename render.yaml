@@ -39,4 +39,4 @@ services:
     startCommand: "cd frontend && npm start"
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        value: https://sms-kb15.onrender.com
+        value: https://sms-8kiu.onrender.com

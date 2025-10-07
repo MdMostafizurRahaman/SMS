@@ -4,6 +4,6 @@
   "framework": "nextjs",
   "installCommand": "npm install",
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://sms-kb15.onrender.com"
+    "NEXT_PUBLIC_API_URL": "https://sms-8kiu.onrender.com"
   }
 }
