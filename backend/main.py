@@ -84,10 +84,10 @@ async def send_sms(request: dict):
     sent_count = 0
     failed_count = 0
 
-    # BulkSMS BD API configuration
+    # 24SMS BD API configuration
     api_key = os.getenv("SMS_API_KEY")
-    api_url = os.getenv("SMS_API_URL", "http://bulksmsbd.net/api/smsapimany")
-    sender_id = os.getenv("SMS_SENDER_ID")
+    api_url = os.getenv("SMS_API_URL", "https://24smsbd.com/api/bulkSms")
+    sender_id = os.getenv("SMS_SENDER_ID", "BIGBANG")
     sms_dry_run = os.getenv("SMS_DRY_RUN", "false").lower() in ("1", "true", "yes")
 
     if not api_key:
@@ -180,9 +180,10 @@ async def send_sms(request: dict):
     print(f"Sending {len(messages)} SMS messages")
 
     try:
+        # 24SMS BD API format
         payload = {
             "api_key": api_key,
-            "senderid": sender_id,
+            "sender_id": sender_id,
             "messages": messages
         }
 
@@ -198,24 +199,35 @@ async def send_sms(request: dict):
             if response.status_code == 200:
                 try:
                     result = response.json()
-                    # Check for success based on BulkSMS BD response format
-                    if isinstance(result, dict) and 'status' in result and result['status'].lower() == 'success':
-                        sent_count = len(messages)
-                        print(f"Successfully sent {sent_count} SMS messages")
+                    # Handle 24SMS BD response format
+                    if isinstance(result, dict):
+                        if result.get('status') == 'success' or result.get('success') == True:
+                            sent_count = len(messages)
+                            print(f"Successfully sent {sent_count} SMS messages")
+                        elif 'error' in result:
+                            print(f"API Error: {result['error']}")
+                            failed_count = len(messages)
+                        else:
+                            print(f"Unexpected response: {result}")
+                            failed_count = len(messages)
                     elif isinstance(result, list):
                         # Handle array response
-                        successful = sum(1 for msg in result if msg.get('status') == 'success')
+                        successful = sum(1 for msg in result if msg.get('status') == 'success' or msg.get('success') == True)
                         sent_count = successful
                         failed_count = len(messages) - successful
                     else:
-                        print(f"Unexpected response format: {result}")
-                        failed_count = len(messages)
+                        sent_count = len(messages)  # Assume success if we get a response
+                        print("Response received, assuming success")
                 except Exception as e:
                     print(f"Error parsing response: {e}")
-                    # If we can't parse JSON, assume success if status is 200
-                    sent_count = len(messages)
+                    # If we can't parse JSON, check if response contains success indicators
+                    response_text = response.text.lower()
+                    if 'success' in response_text or 'sent' in response_text:
+                        sent_count = len(messages)
+                    else:
+                        failed_count = len(messages)
             else:
-                print(f"API request failed with status {response.status_code}")
+                print(f"API request failed with status {response.status_code}: {response.text}")
                 failed_count = len(messages)
 
     except Exception as e:
@@ -231,14 +243,14 @@ async def get_balance():
         raise HTTPException(status_code=500, detail="SMS API key not configured")
 
     try:
-        # Try BulkSMS BD balance API (adjust URL as needed)
-        response = requests.get(f"http://bulksmsbd.net/api/balance?api_key={api_key}")
+        # Try 24SMS BD balance API
+        response = requests.get(f"https://24smsbd.com/api/balance?api_key={api_key}")
         result = response.json()
 
         # Handle different response formats
         if response.status_code == 200:
             if isinstance(result, dict):
-                balance = result.get('balance', result.get('credit', 'Unknown'))
+                balance = result.get('balance', result.get('credit', result.get('sms_balance', 'Unknown')))
                 return {"balance": str(balance)}
             else:
                 return {"balance": "Available"}
