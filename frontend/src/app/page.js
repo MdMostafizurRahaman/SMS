@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 
 export default function Home() {
   const [file, setFile] = useState(null);
@@ -119,12 +120,13 @@ export default function Home() {
       <div className="container-lg py-4">
         <header className="text-center mb-4">
           <div className="d-flex flex-column align-items-center">
-            <img
+            <Image
               src="/Big Bang logo-icn.png"
               alt="SMS Sender logo"
               className="img-fluid mb-3"
-              style={{ maxHeight: '120px' }}
-              onError={(e) => { e.target.src = 'https://dummyimage.com/320x200/2c3e50/ffffff&text=SMS+Sender+Logo'; }}
+              width={320}
+              height={200}
+              style={{ maxHeight: '120px', width: 'auto', height: 'auto' }}
             />
             <h2 className="text-primary fw-bold mb-1" style={{ fontSize: '2rem' }}>
               SMS Sender
