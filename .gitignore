@@ -43,3 +43,4 @@ build/
 # Temporary files
 *.tmp
 *.swp
+vercel.json
