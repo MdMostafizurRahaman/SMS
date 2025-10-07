@@ -236,32 +236,6 @@ async def send_sms(request: dict):
 
     return {"message": f"SMS sent to {sent_count} numbers. Failed: {failed_count}"}
 
-@app.get("/balance")
-async def get_balance():
-    api_key = os.getenv("SMS_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="SMS API key not configured")
-
-    try:
-        # BulkSMS BD balance API (using similar format as SMS API)
-        response = requests.get(f"http://bulksmsbd.net/api/smsapi?api_key={api_key}&type=balance")
-        result = response.text.strip()
-
-        # Handle BulkSMS BD response formats
-        if response.status_code == 200:
-            if result and any(char.isdigit() for char in result):
-                # Extract numeric balance
-                balance = ''.join(c for c in result if c.isdigit())
-                return {"balance": balance if balance else "Available"}
-            else:
-                return {"balance": "Available"}
-        else:
-            raise HTTPException(status_code=400, detail=f"Failed to get balance: {response.text}")
-
-    except Exception as e:
-        # Fallback response
-        return {"balance": "Unable to check balance"}
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

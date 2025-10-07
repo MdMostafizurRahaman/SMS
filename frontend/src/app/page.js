@@ -11,21 +11,6 @@ export default function Home() {
   const [selectedIndices, setSelectedIndices] = useState([]);
   const [message, setMessage] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [balance, setBalance] = useState(null);
-
-  const checkBalance = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/balance`);
-      const result = await response.json();
-      if (response.ok) {
-        setBalance(result.balance);
-      } else {
-        setMessage(result.detail);
-      }
-    } catch (error) {
-      setMessage('Error checking balance');
-    }
-  };
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -159,18 +144,7 @@ export default function Home() {
                 >
                   {loading ? 'Uploading...' : 'Upload and Parse'}
                 </button>
-                <button
-                  onClick={checkBalance}
-                  className="btn btn-info btn-lg ms-2"
-                >
-                  Check Balance
-                </button>
               </div>
-              {balance !== null && (
-                <div className="alert alert-info mt-3">
-                  Current Balance: {balance} SMS
-                </div>
-              )}
               {message && (
                 <div className="alert alert-danger mt-3" role="alert">
                   {message}
