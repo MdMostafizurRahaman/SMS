@@ -11,6 +11,5 @@ passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 pydantic==2.10.3
 email-validator==2.2.0
-pymongo[srv,tls]==4.10.1
 dnspython==2.7.0
 certifi==2024.8.30
