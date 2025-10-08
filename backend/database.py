@@ -53,18 +53,12 @@ async def init_database():
     global client, database, users_collection
     if users_collection is not None:
         return users_collection
-    
+
     mongodb_url = get_mongodb_url()
     print(f"Connecting to MongoDB: {mongodb_url}")
-    
+
     try:
-        # Create SSL context for MongoDB Atlas connection on Render
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
-        # Configuration optimized for cloud deployment platforms like Render
-        # SSL settings to resolve TLS handshake issues on Render
+        # Use only supported Motor options for SSL/TLS
         client = AsyncIOMotorClient(
             mongodb_url,
             serverSelectionTimeoutMS=30000,
@@ -73,59 +67,23 @@ async def init_database():
             maxIdleTimeMS=60000,
             retryWrites=True,
             w='majority',
-            # SSL/TLS settings for Render deployment
             tls=True,
-            tlsAllowInvalidCertificates=True,
-            tlsAllowInvalidHostnames=True,
             tlsCAFile=certifi.where(),
+            tlsAllowInvalidCertificates=True,  # Only if you must, not recommended for prod
             authSource='admin'
         )
         database = client[DATABASE_NAME]
         users_collection = database["users"]
-        
+
         # Test the connection
         await client.admin.command('ping')
         print("MongoDB Atlas connection successful")
         return users_collection
-        
+
     except Exception as e:
-        print(f"Primary MongoDB Atlas connection failed: {e}")
-        print("Attempting fallback connection method...")
-        
-        # Fallback connection with minimal SSL verification
-        try:
-            fallback_client = AsyncIOMotorClient(
-                mongodb_url,
-                serverSelectionTimeoutMS=60000,
-                connectTimeoutMS=60000,
-                socketTimeoutMS=60000,
-                ssl=True,
-                ssl_cert_reqs=ssl.CERT_NONE,
-                ssl_check_hostname=False,
-                ssl_ca_certs=None,
-                authSource='admin',
-                retryWrites=True,
-                w='majority'
-            )
-            
-            fallback_database = fallback_client[DATABASE_NAME]
-            fallback_users_collection = fallback_database["users"]
-            
-            # Test fallback connection
-            await fallback_client.admin.command('ping')
-            print("MongoDB Atlas fallback connection successful")
-            
-            # Use fallback connection
-            client = fallback_client
-            database = fallback_database
-            users_collection = fallback_users_collection
-            
-            return users_collection
-            
-        except Exception as fallback_e:
-            print(f"Fallback MongoDB Atlas connection also failed: {fallback_e}")
-            print("Please check your MongoDB Atlas cluster is running and accessible")
-            raise e
+        print(f"MongoDB Atlas connection failed: {e}")
+        print("Please check your MongoDB Atlas cluster is running and accessible")
+        raise e
 
 async def get_users_collection():
     return await init_database()
