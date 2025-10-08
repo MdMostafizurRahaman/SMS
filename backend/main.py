@@ -26,7 +26,14 @@ async def lifespan(app: FastAPI):
     admin_full_name = os.getenv('ADMIN_FULL_NAME')
 
     existing_admin = await users_collection.find_one({'email': admin_email})
-    if not existing_admin:
+    if existing_admin:
+        # Update admin password to new hash scheme
+        users_collection.update_one(
+            {'email': admin_email},
+            {'$set': {'password_hash': get_password_hash(admin_password), 'updated_at': datetime.utcnow()}}
+        )
+        print('Admin user updated')
+    else:
         admin_user = {
             'email': admin_email,
             'password_hash': get_password_hash(admin_password),
