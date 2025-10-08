@@ -17,8 +17,10 @@ def get_mongodb_url():
     # Try different environment variable names that Render might use
     url = (os.getenv("MONGODB_URL") or 
            os.getenv("DATABASE_URL") or 
-           os.getenv("MONGO_URL") or
-           "mongodb+srv://bsse1320_db_user:FHwoFbjV1kfU8scs@cluster0.85gerfy.mongodb.net/")
+           os.getenv("MONGO_URL"))
+    
+    if not url:
+        raise ValueError("MONGODB_URL environment variable is not set")
     
     if url and "mongodb+srv://" in url:
         # For SRV connection, ensure we have the right parameters
