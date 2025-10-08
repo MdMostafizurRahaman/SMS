@@ -40,10 +40,6 @@ def get_mongodb_url():
                 params.append("w=majority")
             if "authSource=" not in url:
                 params.append("authSource=admin")
-            if "tlsAllowInvalidCertificates=true" not in url:
-                params.append("tlsAllowInvalidCertificates=true")
-            if "tlsAllowInvalidHostnames=true" not in url:
-                params.append("tlsAllowInvalidHostnames=true")
             if params:
                 url += "&" + "&".join(params)
     
@@ -69,7 +65,6 @@ async def init_database():
             w='majority',
             tls=True,
             tlsCAFile=certifi.where(),
-            tlsAllowInvalidCertificates=True,  # Only if you must, not recommended for prod
             authSource='admin'
         )
         database = client[DATABASE_NAME]
