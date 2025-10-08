@@ -10,13 +10,26 @@ class UserRole(str, Enum):
     APPROVED = "approved"
 
 class User(BaseModel):
-    id: Optional[str] = Field(default_factory=lambda: str(ObjectId()), alias="_id")
+    id: str
     email: EmailStr
     password_hash: str
     full_name: str
     role: UserRole
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+
+class UserResponse(BaseModel):
+    id: str
+    email: EmailStr
+    full_name: str
+    role: UserRole
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         populate_by_name = True

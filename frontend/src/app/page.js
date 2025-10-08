@@ -11,10 +11,11 @@ export default function Home() {
   const [file, setFile] = useState(null);
   const [data, setData] = useState([]);
   const [selectedIndices, setSelectedIndices] = useState([]);
-  const [message, setMessage] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [smsMessage, setSmsMessage] = useState(''); // Separate state for SMS results
   const [currentUser, setCurrentUser] = useState(null);
-  const [smsResult, setSmsResult] = useState(null); // Store SMS sending result
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [smsResult, setSmsResult] = useState(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -49,6 +50,9 @@ export default function Home() {
     setFile(e.target.files[0]);
     // Reset selections when new file is uploaded
     setSelectedIndices([]);
+    // Clear previous SMS results when new file is selected
+    setSmsResult(null);
+    setSmsMessage('');
   };
 
   const handleUpload = async () => {
@@ -121,11 +125,13 @@ export default function Home() {
         }),
       });
       const result = await response.json();
-      setMessage(result.message);
+      setSmsMessage(result.message); // Set SMS result message
       setSmsResult(result); // Store the full result including failed_recipients
+      setMessage(''); // Clear any previous error messages
     } catch (error) {
       setMessage('Error sending SMS');
       setSmsResult(null);
+      setSmsMessage(''); // Clear SMS message on error
     }
     setLoading(false);
   };
@@ -182,6 +188,62 @@ export default function Home() {
       }
     } catch (error) {
       setMessage('Error exporting Excel file');
+    }
+    setLoading(false);
+  };
+
+  const handleDownloadSuccess = async () => {
+    if (!smsResult || !smsResult.successful_recipients || smsResult.successful_recipients.length === 0) {
+      setMessage('No successful recipients to download');
+      return;
+    }
+
+    setLoading(true);
+    const token = localStorage.getItem('token');
+    try {
+      const response = await fetch(`${API_BASE_URL}/download-success`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          successful_recipients: smsResult.successful_recipients
+        }),
+      });
+
+      if (response.ok) {
+        // Create blob from response
+        const blob = await response.blob();
+        
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Get filename from response headers or use default
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = 'Successful_Recipients.xlsx';
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename=(.+)/);
+          if (filenameMatch) {
+            filename = filenameMatch[1].replace(/"/g, '');
+          }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        setMessage('Successful recipients Excel downloaded successfully!');
+      } else {
+        const result = await response.json();
+        setMessage(result.detail || 'Error downloading successful recipients Excel');
+      }
+    } catch (error) {
+      setMessage('Error downloading successful recipients Excel');
     }
     setLoading(false);
   };
@@ -414,13 +476,6 @@ export default function Home() {
                       >
                         {loading ? 'Sending...' : `Send SMS to ${selectedIndices.length} Selected Recipients`}
                       </button>
-                      <button
-                        onClick={handleExportExcel}
-                        disabled={loading}
-                        className="btn btn-info btn-lg"
-                      >
-                        {loading ? 'Exporting...' : 'Export to Excel'}
-                      </button>
                     </div>
                     <div className="mt-2">
                       <small className="text-muted">
@@ -428,7 +483,13 @@ export default function Home() {
                       </small>
                     </div>
 
-                    {smsResult && (
+                    {smsMessage && (
+                      <div className="alert alert-success mt-3" role="alert">
+                        <strong>SMS Sent Successfully!</strong> {smsMessage}
+                      </div>
+                    )}
+
+                    {smsResult && (smsResult.sent_count > 0 || smsResult.failed_count > 0) && (
                       <div className="mt-3">
                         <div className="alert alert-info">
                           <h6>SMS Sending Results:</h6>
@@ -436,15 +497,26 @@ export default function Home() {
                             <strong>Sent:</strong> {smsResult.sent_count || 0} | 
                             <strong> Failed:</strong> {smsResult.failed_count || 0}
                           </p>
-                          {smsResult.failed_count > 0 && (
-                            <button
-                              onClick={handleDownloadFailed}
-                              disabled={loading}
-                              className="btn btn-warning btn-sm"
-                            >
-                              {loading ? 'Downloading...' : 'Download Failed Recipients Excel'}
-                            </button>
-                          )}
+                          <div className="d-flex gap-2 flex-wrap">
+                            {smsResult.successful_recipients && smsResult.successful_recipients.length > 0 && (
+                              <button
+                                onClick={handleDownloadSuccess}
+                                disabled={loading}
+                                className="btn btn-success btn-sm"
+                              >
+                                {loading ? 'Downloading...' : 'Download Successful Recipients Excel'}
+                              </button>
+                            )}
+                            {smsResult.failed_recipients && smsResult.failed_recipients.length > 0 && (
+                              <button
+                                onClick={handleDownloadFailed}
+                                disabled={loading}
+                                className="btn btn-warning btn-sm"
+                              >
+                                {loading ? 'Downloading...' : 'Download Failed Recipients Excel'}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}

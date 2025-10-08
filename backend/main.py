@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 import requests
 from datetime import timedelta, datetime
-from models import User, UserCreate, UserLogin, UserUpdate, Token, UserRole
+from models import User, UserCreate, UserLogin, UserUpdate, Token, UserRole, UserResponse
 from auth import authenticate_user, create_access_token, get_current_user, get_current_active_user, get_current_admin_user, get_password_hash
 from database import init_database, get_users_collection
 
@@ -117,9 +117,18 @@ async def logout():
     # For JWT, logout is handled client-side by removing the token
     return {'message': 'Logged out successfully'}
 
-@app.get('/users/me', response_model=User)
+@app.get('/users/me', response_model=UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_active_user)):
-    return current_user
+    # Create UserResponse from current_user data, excluding sensitive fields
+    user_data = {
+        'id': current_user.id,
+        'email': current_user.email,
+        'full_name': current_user.full_name,
+        'role': current_user.role,
+        'created_at': current_user.created_at,
+        'updated_at': current_user.updated_at
+    }
+    return UserResponse(**user_data)
 
 @app.put('/users/me', response_model=dict)
 async def update_user_me(user_update: UserUpdate, current_user: User = Depends(get_current_active_user)):
@@ -144,23 +153,16 @@ async def update_user_me(user_update: UserUpdate, current_user: User = Depends(g
 
     return {'message': 'Profile updated successfully'}
 
-@app.get('/admin/users', response_model=list[User])
+@app.get('/admin/users', response_model=list[UserResponse])
 async def get_pending_users(current_user: User = Depends(get_current_admin_user)):
     users_collection = await get_users_collection()
 
     users = []
     async for user_doc in users_collection.find({'role': 'pending'}):
-        # Handle field name differences
-        if 'password' in user_doc and 'password_hash' not in user_doc:
-            user_doc['password_hash'] = user_doc.pop('password')
-
-        # Ensure required fields exist
-        if 'updated_at' not in user_doc:
-            user_doc['updated_at'] = user_doc.get('created_at')
-
+        # Convert ObjectId to string and set as id field
         user_doc['id'] = str(user_doc['_id'])
-        user_doc.pop('_id', None)  # Remove _id to avoid conflicts
-        users.append(User(**user_doc))
+        del user_doc['_id']  # Remove _id field
+        users.append(UserResponse(**user_doc))
     return users
 
 @app.post('/admin/approve/{user_id}')
@@ -186,23 +188,16 @@ async def delete_user(user_id: str, current_user: User = Depends(get_current_adm
         raise HTTPException(status_code=404, detail='User not found')
     return {'message': 'User deleted successfully'}
 
-@app.get('/admin/all-users', response_model=list[User])
+@app.get('/admin/all-users', response_model=list[UserResponse])
 async def get_all_users(current_user: User = Depends(get_current_admin_user)):
     users_collection = await get_users_collection()
 
     users = []
     async for user_doc in users_collection.find():
-        # Handle field name differences
-        if 'password' in user_doc and 'password_hash' not in user_doc:
-            user_doc['password_hash'] = user_doc.pop('password')
-
-        # Ensure required fields exist
-        if 'updated_at' not in user_doc:
-            user_doc['updated_at'] = user_doc.get('created_at')
-
+        # Convert ObjectId to string and set as id field
         user_doc['id'] = str(user_doc['_id'])
-        user_doc.pop('_id', None)  # Remove _id to avoid conflicts
-        users.append(User(**user_doc))
+        del user_doc['_id']  # Remove _id field
+        users.append(UserResponse(**user_doc))
     return users
 
 @app.post('/upload')
@@ -279,6 +274,7 @@ async def send_sms(request: dict, current_user: User = Depends(get_current_activ
     sent_count = 0
     failed_count = 0
     failed_recipients = []  # Track failed recipients
+    successful_recipients = []  # Track successful recipients
 
     # BulkSMS BD API configuration
     api_key = os.getenv('SMS_API_KEY')
@@ -345,6 +341,8 @@ async def send_sms(request: dict, current_user: User = Depends(get_current_activ
 
         # Send individual SMS to each phone number
         item_failed = True  # Assume failed until proven successful
+        valid_phones = []  # Track valid phones for this item
+        
         for phone in phones_to_send:
             print(f'Processing phone: {phone}')
 
@@ -366,6 +364,13 @@ async def send_sms(request: dict, current_user: User = Depends(get_current_activ
                 norm_phone = phone
 
             print(f'Normalized phone: {norm_phone}')
+
+            # Validate phone number length (must be at least 11 digits for Bangladesh)
+            if len(norm_phone) < 11:
+                print(f'Phone number too short: {norm_phone} (length: {len(norm_phone)})')
+                continue  # Skip this phone, try next one
+
+            valid_phones.append(norm_phone)
 
             try:
                 # BulkSMS BD API format - individual SMS to each phone
@@ -437,18 +442,32 @@ async def send_sms(request: dict, current_user: User = Depends(get_current_activ
             except Exception as e:
                 print(f'Error sending SMS to {norm_phone}: {e}')
 
-        # If all phones failed for this item, add to failed recipients
-        if item_failed:
+        # If no valid phones were found for this item, mark as failed
+        if not valid_phones:
             failed_count += 1
             failed_recipients.append(item)
+        # If all phones failed for this item, add to failed recipients
+        elif item_failed:
+            failed_count += 1
+            failed_recipients.append(item)
+        # If item was successful, add to successful recipients
+        else:
+            successful_recipients.append(item)
 
-    # Return response with failed recipients data
+    # Return response with recipients data
     response_data = {
         'message': f'SMS sent to {sent_count} numbers. Failed: {failed_count}',
         'sent_count': sent_count,
-        'failed_count': failed_count,
-        'failed_recipients': failed_recipients
+        'failed_count': failed_count
     }
+    
+    # Include successful recipients if there are any
+    if successful_recipients:
+        response_data['successful_recipients'] = successful_recipients
+    
+    # Include failed recipients if there are any
+    if failed_recipients:
+        response_data['failed_recipients'] = failed_recipients
 
     return response_data
 
@@ -514,6 +533,8 @@ async def export_excel(request: dict, current_user: User = Depends(get_current_a
 
         # Simulate SMS sending for each phone
         item_success = False
+        valid_phones = []
+        
         for phone in phones_to_send:
             # Normalize phone: remove spaces, dashes and parentheses
             phone = phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
@@ -532,14 +553,14 @@ async def export_excel(request: dict, current_user: User = Depends(get_current_a
             else:
                 norm_phone = phone
 
-            # Basic validation - if phone number looks valid, consider it success
-            if len(norm_phone) == 13 and norm_phone.startswith('880'):
+            # Validate phone number length (must be at least 11 digits)
+            if len(norm_phone) >= 11:
+                valid_phones.append(norm_phone)
                 item_success = True
                 break  # If any phone is valid, consider the whole item successful
 
-        if item_success:
-            success_recipients.append(item)
-        else:
+        # If no valid phones found, mark as failed
+        if not valid_phones:
             failed_recipients.append(item)
 
     # Create timestamp for filenames
@@ -585,6 +606,49 @@ async def export_excel(request: dict, current_user: User = Depends(get_current_a
         BytesIO(zip_buffer.read()),
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+    )
+
+@app.post("/download-success")
+async def download_success(request: dict, current_user: User = Depends(get_current_active_user)):
+    """
+    Download successful recipients as Excel file after SMS sending
+    """
+    from fastapi.responses import StreamingResponse
+    import pandas as pd
+    from io import BytesIO
+    from datetime import datetime
+
+    successful_recipients = request.get('successful_recipients', [])
+
+    if not successful_recipients:
+        # Return empty Excel if no successful recipients
+        output = BytesIO()
+        pd.DataFrame(columns=['No Successful Recipients']).to_excel(output, index=False, engine='xlsxwriter')
+        output.seek(0)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"No_Successful_Recipients_{timestamp}.xlsx"
+        return StreamingResponse(
+            BytesIO(output.read()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    # Create Excel file with successful recipients
+    output = BytesIO()
+    df_success = pd.DataFrame(successful_recipients)
+    df_success.to_excel(output, index=False, engine='xlsxwriter')
+    output.seek(0)
+
+    # Create filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"Successful_Recipients_{timestamp}.xlsx"
+
+    # Return file as download
+    return StreamingResponse(
+        BytesIO(output.read()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 @app.post("/download-failed")

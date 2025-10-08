@@ -117,6 +117,10 @@ export default function Admin() {
   const updateProfile = async (e) => {
     e.preventDefault();
     
+    // Clear any previous messages
+    setError('');
+    setSuccess('');
+    
     if (profileData.password && profileData.password !== profileData.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -141,16 +145,25 @@ export default function Admin() {
       setSuccess('Profile updated successfully');
       setProfileData(prev => ({ ...prev, password: '', confirmPassword: '' }));
       
-      // Refresh current user data
-      const response = await axios.get(`${API_BASE_URL}/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setCurrentUser(response.data);
-      setProfileData(prev => ({
-        ...prev,
-        email: response.data.email,
-        full_name: response.data.full_name
-      }));
+      // Refresh current user data (don't show error if this fails)
+      try {
+        const response = await axios.get(`${API_BASE_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setCurrentUser(response.data);
+        setProfileData(prev => ({
+          ...prev,
+          email: response.data.email,
+          full_name: response.data.full_name
+        }));
+      } catch (refreshErr) {
+        // Refresh failed, but update was successful - just update local state
+        setProfileData(prev => ({
+          ...prev,
+          email: profileData.email,
+          full_name: profileData.full_name
+        }));
+      }
     } catch (err) {
       setError('Failed to update profile');
     }
