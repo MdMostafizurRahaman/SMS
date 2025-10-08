@@ -25,7 +25,7 @@ def get_mongodb_url():
     if url and "mongodb+srv://" in url:
         # For SRV connection, ensure we have the right parameters
         if "?" not in url:
-            url += "?ssl=true&retryWrites=true&w=majority&authSource=admin"
+            url += "?ssl=true&retryWrites=true&w=majority&authSource=admin&tlsAllowInvalidCertificates=true"
         else:
             # Add missing parameters
             params = []
@@ -37,6 +37,8 @@ def get_mongodb_url():
                 params.append("w=majority")
             if "authSource=" not in url:
                 params.append("authSource=admin")
+            if "tlsAllowInvalidCertificates=true" not in url:
+                params.append("tlsAllowInvalidCertificates=true")
             if params:
                 url += "&" + "&".join(params)
     
@@ -51,12 +53,15 @@ async def init_database():
     print(f"Connecting to MongoDB: {mongodb_url}")
     
     try:
-        # Simple configuration that works with Render
+        # Configuration optimized for cloud deployment platforms like Render
         client = AsyncIOMotorClient(
             mongodb_url,
-            serverSelectionTimeoutMS=15000,
-            connectTimeoutMS=20000,
-            socketTimeoutMS=30000
+            serverSelectionTimeoutMS=30000,
+            connectTimeoutMS=30000,
+            socketTimeoutMS=30000,
+            maxIdleTimeMS=60000,
+            retryWrites=True,
+            w='majority'
         )
         database = client[DATABASE_NAME]
         users_collection = database["users"]
