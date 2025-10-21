@@ -10,7 +10,7 @@ from auth import authenticate_user
 async def main():
     coll = await get_users_collection()
     admin_email = os.getenv('ADMIN_EMAIL', 'admin@gmail.com')
-    admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
+    admin_password = os.getenv('ADMIN_PASSWORD', 'BigBangAdmin2025!')
     admin = await coll.find_one({'email': admin_email})
     if not admin:
         print('Admin not found in DB')

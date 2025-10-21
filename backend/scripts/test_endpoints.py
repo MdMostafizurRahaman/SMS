@@ -23,7 +23,7 @@ def run_tests():
     print(r.status_code, r.json())
 
     admin_user = os.getenv('ADMIN_EMAIL', 'admin@gmail.com')
-    admin_pass = os.getenv('ADMIN_PASSWORD', 'admin123')
+    admin_pass = os.getenv('ADMIN_PASSWORD', 'BigBangAdmin2025!')
 
     print('\nPOST /token (admin)')
     r = client.post('/token', data={'username': admin_user, 'password': admin_pass})

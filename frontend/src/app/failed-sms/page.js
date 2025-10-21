@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -26,7 +26,7 @@ export default function FailedSMSPage(){
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const backToHome = ()=> router.push('/');
 
-  const fetchItems = async ()=>{
+  const fetchItems = useCallback(async ()=>{
     setLoading(true);
     try{
       const res = await fetch(`${API_BASE_URL}/failed-sms`,{headers:{'Authorization':`Bearer ${token}`}});
@@ -36,9 +36,9 @@ export default function FailedSMSPage(){
       setItems([]);
     }
     setLoading(false);
-  }
+  }, [token])
 
-  useEffect(()=>{ fetchItems() },[])
+  useEffect(()=>{ fetchItems() },[fetchItems])
 
   const toggle = (id)=>{
     const s = new Set(selected);

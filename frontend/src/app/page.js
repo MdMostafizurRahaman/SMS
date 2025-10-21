@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import homeStyles from './home_style.module.css';
@@ -375,7 +376,7 @@ export default function Home() {
         <header className="text-center mb-4">
           <div className="d-flex justify-content-between align-items-center mb-3">
             <div>
-              <a href="/" className="btn btn-link btn-sm">Home</a>
+              <Link href="/" className="btn btn-link btn-sm">Home</Link>
             </div>
             <div className="d-flex align-items-center">
               {currentUser ? (
@@ -383,19 +384,19 @@ export default function Home() {
                   <span className="me-3">Welcome, {currentUser?.full_name}</span>
                   {currentUser?.role === 'admin' && (
       <>
-        <a
+        <Link
           href="/admin"
           className="btn btn-outline-primary btn-sm me-2 d-flex align-items-center gap-1"
         >
           <FaTools /> Admin Panel
-        </a>
+        </Link>
 
                   {/* Check Balance Button - Admin Only */}
                   <button
                     className="btn btn-outline-success btn-sm me-2 d-flex align-items-center gap-1"
                     onClick={async () => {
                       try {
-                        const apiKey = 'mkY5eL3P0qEkxYh3yn92'; // Replace with your API key
+                        const apiKey = process.env.NEXT_PUBLIC_SMS_API_KEY; // Use environment variable
                         const res = await fetch(`http://bulksmsbd.net/api/getBalanceApi?api_key=${apiKey}`);
                         const data = await res.json();
                         if (res.ok) {
@@ -419,12 +420,12 @@ export default function Home() {
                 </>
               ) : (
                 <>
-                  <a href="/login" className="btn btn-primary btn-sm me-2">
+                  <Link href="/login" className="btn btn-primary btn-sm me-2">
                     Login
-                  </a>
-                  <a href="/register" className="btn btn-outline-primary btn-sm">
+                  </Link>
+                  <Link href="/register" className="btn btn-outline-primary btn-sm">
                     Register
-                  </a>
+                  </Link>
                 </>
               )}
               </div>
@@ -433,10 +434,10 @@ export default function Home() {
           {/* Show top nav when not on home page */}
           {pathname && pathname !== '/' && (
             <div className="d-flex justify-content-center mb-3">
-              <a href="/" className="btn btn-link me-2">Home</a>
-              <a href="/single-sms" className="btn btn-link me-2">Single SMS</a>
-              <a href="/templates" className="btn btn-link me-2">Make SMS Format</a>
-              <a href="/failed-sms" className="btn btn-link">Failed SMS</a>
+              <Link href="/" className="btn btn-link me-2">Home</Link>
+              <Link href="/single-sms" className="btn btn-link me-2">Single SMS</Link>
+              <Link href="/templates" className="btn btn-link me-2">Make SMS Format</Link>
+              <Link href="/failed-sms" className="btn btn-link">Failed SMS</Link>
             </div>
           )}
           <div className={`${homeStyles.headerRow}`}>
@@ -458,12 +459,12 @@ export default function Home() {
                   Upload Excel files with student and guardian phone numbers to send SMS messages.
                 </p>
                 <div className="d-flex justify-content-center gap-3">
-                  <a href="/login" className="btn btn-primary btn-lg">
+                  <Link href="/login" className="btn btn-primary btn-lg">
                     Login
-                  </a>
-                  <a href="/register" className="btn btn-outline-primary btn-lg">
+                  </Link>
+                  <Link href="/register" className="btn btn-outline-primary btn-lg">
                     Register
-                  </a>
+                  </Link>
                 </div>
               </div>
             </div>
