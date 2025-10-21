@@ -6,7 +6,7 @@ import Link from 'next/link';
 import axios from 'axios';
 import Image from 'next/image';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://sms-8kiu.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://sms-8kiu.onrender.com' || 'http://localhost:8000';
 
 export default function Admin() {
   const [pendingUsers, setPendingUsers] = useState([]);

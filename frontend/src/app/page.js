@@ -10,7 +10,7 @@ import { FaTools } from "react-icons/fa";
 import { FiLogOut } from "react-icons/fi";
 
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000' || 'https://sms-8kiu.onrender.com';
 
 export default function Home() {
   const [file, setFile] = useState(null);
