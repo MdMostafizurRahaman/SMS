@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./template_style.module.css";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000" || 'https://sms-8kiu.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://sms-8kiu.onrender.com" || "http://localhost:8000";
 
 export default function TemplatesPage() {
   const [type, setType] = useState("varsity");
