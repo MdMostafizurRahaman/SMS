@@ -13,6 +13,7 @@ DATABASE_NAME = os.getenv("DATABASE_NAME")
 client = None
 database = None
 users_collection = None
+failed_sms_collection = None
 
 def get_mongodb_url():
     """Ensure MongoDB URL has proper SSL parameters for cloud deployment"""
@@ -46,7 +47,7 @@ def get_mongodb_url():
     return url
 
 async def init_database():
-    global client, database, users_collection
+    global client, database, users_collection, failed_sms_collection
     if users_collection is not None:
         return users_collection
 
@@ -69,6 +70,7 @@ async def init_database():
         )
         database = client[DATABASE_NAME]
         users_collection = database["users"]
+        failed_sms_collection = database["failed_sms"]
 
         # Test the connection
         await client.admin.command('ping')
@@ -82,3 +84,10 @@ async def init_database():
 
 async def get_users_collection():
     return await init_database()
+
+
+async def get_failed_sms_collection():
+    """Return the failed_sms collection, initializing DB if necessary."""
+    await init_database()
+    global failed_sms_collection
+    return failed_sms_collection

@@ -10,7 +10,12 @@ import requests
 from datetime import timedelta, datetime
 from models import User, UserCreate, UserLogin, UserUpdate, Token, UserRole, UserResponse
 from auth import authenticate_user, create_access_token, get_current_user, get_current_active_user, get_current_admin_user, get_password_hash
-from database import init_database, get_users_collection
+from database import init_database, get_users_collection, get_failed_sms_collection
+from sms_sender import bulk_send, normalize_phone
+from templates import format_varsity_results, format_medical_results
+import pandas as pd
+from io import BytesIO
+from fastapi.responses import StreamingResponse
 
 load_dotenv()
 
@@ -28,7 +33,7 @@ async def lifespan(app: FastAPI):
     existing_admin = await users_collection.find_one({'email': admin_email})
     if existing_admin:
         # Update admin password to new hash scheme
-        users_collection.update_one(
+        await users_collection.update_one(
             {'email': admin_email},
             {'$set': {'password_hash': get_password_hash(admin_password), 'updated_at': datetime.utcnow()}}
         )
@@ -53,14 +58,24 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Allow CORS
-origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
+# Robust CORS origins parsing: include common localhost variants by default for local dev
+cors_env = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
+origins = [s.strip() for s in cors_env.split(',') if s.strip()]
+if len(origins) == 1 and origins[0] == '*':
+    allow_origins = ['*']
+else:
+    allow_origins = origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+# Note: do not add explicit OPTIONS route handlers for endpoints protected by CORS middleware.
+# The CORSMiddleware will handle preflight (OPTIONS) requests and set the correct headers.
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
 
@@ -105,6 +120,8 @@ async def register(user: UserCreate):
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await authenticate_user(form_data.username, form_data.password)
     if not user:
+        # Debug: log failed login (do not log password)
+        print(f'Login failed for: {form_data.username}')
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail='Incorrect email or password',
@@ -244,7 +261,10 @@ async def upload_file(file: UploadFile = File(...), current_user: User = Depends
             student_col = c
 
     if result_col is None:
-        raise HTTPException(status_code=400, detail=f'Excel must have a Result column. Found: {df.columns.tolist()}')
+        # If Result column is missing, create an empty 'Result' column so downstream flows can generate it
+        # Log for visibility and continue
+        print(f"Upload: 'Result' column missing, creating empty 'Result' column. Columns found: {df.columns.tolist()}")
+        df['Result'] = ''
 
     # Rename detected columns to canonical names expected by frontend/backend
     rename_map = {}
@@ -476,6 +496,191 @@ async def send_sms(request: dict, current_user: User = Depends(get_current_activ
     if failed_recipients:
         response_data['failed_recipients'] = failed_recipients
 
+    return response_data
+
+
+@app.post('/send-manual')
+async def send_manual(request: dict, current_user: User = Depends(get_current_active_user)):
+    """Send manual single or multiple numbers. Expects {'numbers': 'comma or newline sep', 'message': '...'}"""
+    numbers_raw = request.get('numbers', '')
+    message = request.get('message', '')
+
+    if not numbers_raw or not message:
+        raise HTTPException(status_code=400, detail='numbers and message required')
+
+    # split by comma or newline
+    nums = [n.strip() for part in numbers_raw.split('\n') for n in part.split(',')]
+    nums = [n for n in nums if n]
+
+    result = bulk_send(message, nums)
+
+    # Persist failed recipients
+    if result.get('failed_recipients'):
+        coll = await get_failed_sms_collection()
+        # store with user id and timestamp
+        from datetime import datetime
+        docs = []
+        for f in result['failed_recipients']:
+            docs.append({
+                'user_id': current_user.id,
+                'original_number': f.get('number'),
+                'normalized': f.get('normalized'),
+                'message': message,
+                'info': f.get('info'),
+                'created_at': datetime.utcnow(),
+                'resolved': False
+            })
+        if docs:
+            await coll.insert_many(docs)
+
+    return result
+
+
+@app.get('/failed-sms')
+async def list_failed_sms(current_user: User = Depends(get_current_active_user)):
+    """List failed sms for the current user (admins see all)."""
+    coll = await get_failed_sms_collection()
+    results = []
+    async for doc in coll.find({} if current_user.role == 'admin' else {'user_id': current_user.id}):
+        doc['id'] = str(doc['_id'])
+        doc.pop('_id', None)
+        results.append(doc)
+    return results
+
+
+@app.post('/failed-sms/resend')
+async def resend_failed_sms(request: dict, current_user: User = Depends(get_current_active_user)):
+    """Resend a list of failed sms ids or items. Accepts {'ids': [...]} or {'items': [...]}
+    Returns send results and updates DB for successes."""
+    coll = await get_failed_sms_collection()
+    ids = request.get('ids') or []
+    items = request.get('items') or []
+    from bson import ObjectId
+    to_process = []
+    if ids:
+        for _id in ids:
+            doc = await coll.find_one({'_id': ObjectId(_id)})
+            if doc:
+                to_process.append(doc)
+    else:
+        to_process = items
+
+    numbers = [t.get('original_number') or t.get('normalized') for t in to_process]
+    messages = [t.get('message') for t in to_process]
+
+    overall_success = []
+    overall_failed = []
+
+    for idx, t in enumerate(to_process):
+        msg = t.get('message') if isinstance(t, dict) else messages[idx]
+        num = t.get('original_number') if isinstance(t, dict) else numbers[idx]
+        r = bulk_send(msg, [num])
+        if r.get('failed_count', 0) == 0:
+            # mark resolved
+            try:
+                await coll.update_one({'_id': ObjectId(t.get('_id') if t.get('_id') else t.get('id'))}, {'$set': {'resolved': True}})
+            except Exception:
+                pass
+            overall_success.append({'item': t, 'result': r})
+        else:
+            overall_failed.append({'item': t, 'result': r})
+
+    return {'successes': overall_success, 'failures': overall_failed}
+
+
+@app.post('/templates/preview')
+async def templates_preview(request: dict, current_user: User = Depends(get_current_active_user)):
+    """Preview formatted Result column for provided Excel bytes or data records. Expects {'data': [...], 'type': 'varsity'|'medical'}"""
+    ttype = request.get('type')
+    data = request.get('data')
+    if data is None:
+        # allow Excel bytes (base64) not implemented here
+        raise HTTPException(status_code=400, detail='data required')
+    df = pd.DataFrame(data)
+    if ttype == 'varsity':
+        out = format_varsity_results(df)
+    elif ttype == 'medical':
+        out = format_medical_results(df)
+    else:
+        raise HTTPException(status_code=400, detail='unknown template type')
+    # Return full rows including generated Result so frontend can preview and send
+    # Convert NaN to None for JSON serializability
+    out = out.fillna('')
+    return {'preview': out.to_dict('records')}
+
+
+@app.post('/templates/download')
+async def templates_download(request: dict, current_user: User = Depends(get_current_active_user)):
+    """Return an Excel file of the formatted template applied to provided data."""
+    ttype = request.get('type')
+    data = request.get('data')
+    if data is None:
+        raise HTTPException(status_code=400, detail='data required')
+    df = pd.DataFrame(data)
+    if ttype == 'varsity':
+        out = format_varsity_results(df)
+    elif ttype == 'medical':
+        out = format_medical_results(df)
+    else:
+        raise HTTPException(status_code=400, detail='unknown template type')
+
+    output = BytesIO()
+    out.to_excel(output, index=False, engine='xlsxwriter')
+    output.seek(0)
+    filename = f"Template_{ttype}.xlsx"
+    return StreamingResponse(BytesIO(output.read()), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.post('/templates/send')
+async def templates_send(request: dict, current_user: User = Depends(get_current_active_user)):
+    """Apply template to provided data and send SMS to valid numbers. Expects {'data': [...], 'type': 'varsity'|'medical'}"""
+    ttype = request.get('type')
+    data = request.get('data')
+    if data is None:
+        raise HTTPException(status_code=400, detail='data required')
+    df = pd.DataFrame(data)
+    if ttype == 'varsity':
+        out = format_varsity_results(df)
+    elif ttype == 'medical':
+        out = format_medical_results(df)
+    else:
+        raise HTTPException(status_code=400, detail='unknown template type')
+
+    sent_count = 0
+    failed_count = 0
+    failed_recipients = []
+    successful_recipients = []
+
+    for _, row in out.iterrows():
+        sms = row.get('Result')
+        # gather phones
+        phones = []
+        for k in ['Guardian Phone No', 'Guardian Phone', 'Student Phone No', 'Student Phone']:
+            if k in row and pd.notna(row[k]):
+                phones.append(str(row[k]))
+
+        if not phones:
+            failed_count += 1
+            failed_recipients.append(row.to_dict())
+            continue
+
+        res = bulk_send(sms, phones)
+        sent_count += res.get('sent_count', 0)
+        failed_count += res.get('failed_count', 0)
+        if res.get('successful_recipients'):
+            successful_recipients.extend(res.get('successful_recipients'))
+        if res.get('failed_recipients'):
+            failed_recipients.extend(res.get('failed_recipients'))
+
+    response_data = {
+        'message': f'SMS sent to {sent_count} numbers. Failed: {failed_count}',
+        'sent_count': sent_count,
+        'failed_count': failed_count
+    }
+    if successful_recipients:
+        response_data['successful_recipients'] = successful_recipients
+    if failed_recipients:
+        response_data['failed_recipients'] = failed_recipients
     return response_data
 
 @app.post("/export-excel")

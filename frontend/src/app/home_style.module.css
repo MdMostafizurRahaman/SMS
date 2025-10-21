@@ -1,0 +1,66 @@
+.headerRow { display:flex; align-items:center; gap:12px; justify-content:center; flex-direction:row; }
+.logoSmall { width:84px !important; height:auto !important; }
+.headingText { text-align:center; }
+.subtitle { color: #6c757d; font-size: 1rem; }
+.optionsGrid { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:stretch; }
+.optionCard {
+  flex: 1 1 200px;
+  min-width: 150px;
+  max-width: 320px;
+  padding: 12px;
+  border-radius: 12px;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+  transition: transform .15s ease, box-shadow .15s ease, opacity .12s ease, background .18s ease, filter .18s ease;
+}
+.optionCard:hover { transform: translateY(-6px); box-shadow: 0 18px 40px rgba(0,0,0,0.10); }
+.optionCard:hover { transform: translateY(-6px); box-shadow: 0 18px 40px rgba(0,0,0,0.10); }
+.optSmallText { font-size: .85rem; color: rgba(255,255,255,0.9); }
+.single { background: linear-gradient(135deg,#5eead4 0%,#34d399 100%); color:#042628; }
+.single:hover { background: linear-gradient(135deg,#2ee6c4 0%,#10b981 100%); filter: brightness(.98); }
+.upload { background: linear-gradient(135deg,#ffd580 0%,#ffb74d 100%); color:#3b2f00; }
+.upload:hover { background: linear-gradient(135deg,#ffc85a 0%,#ff9f1c 100%); filter: brightness(.98); }
+.templates { background: linear-gradient(135deg,#90caf9 0%,#42a5f5 100%); color:#04263a; }
+.templates:hover { background: linear-gradient(135deg,#64b5f6 0%,#2196f3 100%); filter: brightness(.98); }
+.failed { background: linear-gradient(135deg,#f7a8a8 0%,#f06262 100%); color:#3a0b0b; }
+.failed:hover { background: linear-gradient(135deg,#f69a9a 0%,#ef5350 100%); filter: brightness(.98); }
+.cardTitle { font-weight:700; font-size:1.05rem; }
+.smallCard { padding:10px 12px; border-radius:10px; }
+.navButtons { position:absolute; left:16px; top:18px; }
+.backBtn { margin-right:8px; }
+.compactGrid .optionCard { padding:8px; min-width:120px; max-width:260px; }
+.compactGrid .cardTitle { font-size:0.95rem; }
+.compactGrid .optSmallText { font-size:0.78rem; }
+/* On large screens keep the four cards in one row */
+@media (min-width: 992px) {
+	.optionsGrid { flex-wrap: nowrap; }
+	.optionCard { max-width: 23%; flex: 1 1 23%; }
+}
+
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  background-color: #f8f9fa;
+  color: #333;
+  padding: 10px 0;
+  font-size: 14px;
+  border-top: 1px solid #ddd;
+  z-index: 1000;
+}
+
+
+.table-responsive::-webkit-scrollbar {
+  width: 8px;
+}
+.table-responsive::-webkit-scrollbar-thumb {
+  background-color: #bbb;
+  border-radius: 4px;
+}
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background-color: #999;
+}
+

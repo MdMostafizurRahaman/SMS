@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import Image from 'next/image';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://sms-8kiu.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -39,7 +39,9 @@ export default function Register() {
       setSuccess(response.data.message);
       setTimeout(() => router.push('/login'), 2000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed');
+      console.error('Register error', err);
+      const detail = err.response?.data?.detail ?? err.response?.data ?? err.message;
+      setError(typeof detail === 'object' ? JSON.stringify(detail) : detail || 'Registration failed');
     }
     setLoading(false);
   };
