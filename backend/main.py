@@ -906,6 +906,45 @@ async def download_failed(request: dict, current_user: User = Depends(get_curren
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
+@app.get("/check-balance")
+async def check_balance(current_user: User = Depends(get_current_admin_user)):
+    """
+    Check SMS balance from BulkSMS BD API
+    """
+    api_key = os.getenv('SMS_API_KEY')
+    api_url = os.getenv('SMS_API_URL', 'http://bulksmsbd.net/api/smsapi')
+
+    if not api_key:
+        raise HTTPException(status_code=500, detail='SMS API key not configured')
+
+    try:
+        # Call BulkSMS BD balance API
+        balance_url = f"http://bulksmsbd.net/api/getBalanceApi?api_key={api_key}"
+        response = requests.get(balance_url, timeout=30)
+
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                return {
+                    'balance': data.get('balance', 'Unknown'),
+                    'status': 'success'
+                }
+            except:
+                # If not JSON, return the text response
+                return {
+                    'balance': response.text.strip(),
+                    'status': 'success'
+                }
+        else:
+            return {
+                'balance': 'Error',
+                'status': 'error',
+                'message': f'API returned status {response.status_code}'
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error checking balance: {str(e)}')
+
 if __name__ == '__main__':
     import uvicorn
     port = int(os.environ.get("PORT", 8000))

@@ -396,10 +396,12 @@ export default function Home() {
                     className="btn btn-outline-success btn-sm me-2 d-flex align-items-center gap-1"
                     onClick={async () => {
                       try {
-                        const apiKey = process.env.NEXT_PUBLIC_SMS_API_KEY; // Use environment variable
-                        const res = await fetch(`http://bulksmsbd.net/api/getBalanceApi?api_key=${apiKey}`);
+                        const token = localStorage.getItem('token');
+                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/check-balance`, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
                         const data = await res.json();
-                        if (res.ok) {
+                        if (res.ok && data.status === 'success') {
                           alert(`Your current balance is: ${data.balance}`);
                         } else {
                           alert(`Failed to fetch balance: ${data.message || 'Unknown error'}`);
