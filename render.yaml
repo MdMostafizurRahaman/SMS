@@ -18,7 +18,7 @@ services:
       - key: ADMIN_EMAIL
         value: admin@gmail.com
       - key: ADMIN_PASSWORD
-        value: admin123
+        value: BigBangAdmin2025!
       - key: ADMIN_FULL_NAME
         value: System Administrator
       - key: SMS_API_KEY
